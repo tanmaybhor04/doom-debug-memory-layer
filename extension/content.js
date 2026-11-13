@@ -9,6 +9,8 @@ function getEditor() {
 function injectText(text) {
   const el = getEditor();
   if (!el) return alert("Chat box not found");
+  const current = el.value ?? el.innerText;
+  if (current.includes(text)) return console.log("Already injected");
   el.focus();
   if (el.tagName === "TEXTAREA") {
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
@@ -16,14 +18,23 @@ function injectText(text) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
   } else {
     document.execCommand("selectAll", false);
-    document.execCommand("insertText", false, text + "\n\n" + el.innerText);
+    document.execCommand("insertText", false, text + "\n\n" + current);
   }
 }
 
 function callApi(path, body) {
-  return new Promise((resolve) =>
-    chrome.runtime.sendMessage({ path, body }, resolve)
-  );
+  return new Promise((resolve) => {
+    try {
+      if (!chrome.runtime?.id) {
+        return resolve({ ok: false, error: "Extension reloaded, refresh the page" });
+      }
+      chrome.runtime.sendMessage({ path, body }, (res) =>
+        resolve(res || { ok: false, error: "No response" })
+      );
+    } catch (e) {
+      resolve({ ok: false, error: String(e) });
+    }
+  });
 }
 
 function getUserMessages() {
@@ -47,8 +58,17 @@ async function onSave() {
 async function onInject() {
   const el = getEditor();
   const prompt = el ? (el.value ?? el.innerText) : "";
-  const res = await callApi("/context", { prompt, workspace: "personal" });
-  const context = res && res.ok ? res.data.context : MOCK_CONTEXT;
+  let context = MOCK_CONTEXT;
+  try {
+    const res = await Promise.race([
+      callApi("/context", { prompt, workspace: "personal" }),
+      new Promise((r) => setTimeout(() => r(null), 2000)),
+    ]);
+    if (res && res.ok && res.data && res.data.context) context = res.data.context;
+  } catch (e) {
+    console.log("API failed, using mock:", e);
+  }
+  console.log("Injecting:", context);
   injectText(context);
 }
 
