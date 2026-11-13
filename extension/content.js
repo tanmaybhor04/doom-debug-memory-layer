@@ -72,6 +72,51 @@ async function onInject() {
   injectText(context);
 }
 
+// ---------- AUTO MODE ----------
+const FACT_RE = /\b(i am|i'm|im|my|we are|we're|our|using|building|working on|prefer|project|stack|need|want|use)\b/i;
+let injectedUrl = null;
+let lastHref = location.href;
+setInterval(() => {
+  if (location.href !== lastHref) { lastHref = location.href; injectedUrl = null; }
+}, 1000);
+
+function toast(msg) {
+  const d = document.createElement("div");
+  d.textContent = msg;
+  d.style.cssText = "position:fixed;bottom:70px;right:20px;z-index:999999;background:#111;color:#fff;padding:8px 12px;border-radius:8px;font:13px sans-serif;";
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3000);
+}
+
+function captureMemory(text) {
+  if (text.length < 25 || !FACT_RE.test(text)) return;
+  callApi("/memories", { text, source: location.hostname, workspace: "personal" });
+}
+
+document.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  const el = getEditor();
+  if (!el || !(e.target === el || el.contains(e.target))) return;
+  const text = (el.value ?? el.innerText).trim();
+  if (!text) return;
+
+  if (text.includes("Context about me:")) { injectedUrl = null; return; } // already injected, let it send
+
+  captureMemory(text);
+
+  if (injectedUrl === location.href) return;
+  if (getUserMessages().length > 0) return; // only the first message of a new chat
+
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  injectedUrl = location.href;
+  const res = await callApi("/context", { prompt: text, workspace: "personal" });
+  const ctx = res && res.ok && res.data && res.data.context;
+  if (ctx) { injectText(ctx); toast("Memory added. Press Enter to send"); }
+  else toast("No memory yet. Press Enter to send");
+}, true);
+
+// ---------- WIDGET ----------
 function createWidget() {
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:999999;";
