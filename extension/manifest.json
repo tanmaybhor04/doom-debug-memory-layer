@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "AI Memory Layer",
+  "version": "1.0.0",
+  "description": "Carry your context to every AI chat.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://*.ngrok-free.dev/*",
+    "https://*.ngrok-free.app/*",
+    "https://*.ngrok.io/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "AI Memory Layer" },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://claude.ai/*", "https://gemini.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
