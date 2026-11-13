@@ -20,6 +20,38 @@ function injectText(text) {
   }
 }
 
+function callApi(path, body) {
+  return new Promise((resolve) =>
+    chrome.runtime.sendMessage({ path, body }, resolve)
+  );
+}
+
+function getUserMessages() {
+  const sel = '[data-testid="user-message"], [data-message-author-role="user"]';
+  return [...document.querySelectorAll(sel)]
+    .map((e) => e.innerText.trim())
+    .filter(Boolean);
+}
+
+async function onSave() {
+  const selected = window.getSelection().toString().trim();
+  const msgs = getUserMessages();
+  const text = selected || msgs[msgs.length - 1];
+  if (!text) return alert("Nothing to save");
+  const res = await callApi("/memories", {
+    text, source: location.hostname, workspace: "personal",
+  });
+  console.log("Save result:", res);
+}
+
+async function onInject() {
+  const el = getEditor();
+  const prompt = el ? (el.value ?? el.innerText) : "";
+  const res = await callApi("/context", { prompt, workspace: "personal" });
+  const context = res && res.ok ? res.data.context : MOCK_CONTEXT;
+  injectText(context);
+}
+
 function createWidget() {
   const host = document.createElement("div");
   host.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:999999;";
@@ -32,8 +64,8 @@ function createWidget() {
     </style>
     <button id="save">Save chat</button>
     <button id="inject">Inject context</button>`;
-  shadow.getElementById("inject").onclick = () => injectText(MOCK_CONTEXT);
-  shadow.getElementById("save").onclick = () => console.log("Save clicked (backend later)");
+  shadow.getElementById("inject").onclick = onInject;
+  shadow.getElementById("save").onclick = onSave;
   document.body.appendChild(host);
 }
 
