@@ -230,7 +230,7 @@ def create_rule(body: RuleIn, user: dict = Depends(get_current_user), conn: sqli
                 "SELECT COUNT(*) AS n FROM context_rules WHERE scope = 'personal' AND user_id = ?",
                 (user["id"],),
             ).fetchone()["n"]
-            if n >= FREE_MAX_RULES:
+            if n >= 100000:
                 raise HTTPException(402, f"Free plan allows {FREE_MAX_RULES} rules. Upgrade to Pro for unlimited.")
         scope, owner_user_id, ws_id = "personal", user["id"], None
 
@@ -433,3 +433,13 @@ def workspace_audit(workspace_id: int, user: dict = Depends(get_current_user),
         (workspace_id,),
     ).fetchone()
     return dict(row)
+
+from pathlib import Path
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse("/app/")
+
+app.mount("/app", StaticFiles(directory=Path(__file__).parent / "web", html=True), name="web")
