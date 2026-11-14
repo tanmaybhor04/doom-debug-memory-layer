@@ -216,6 +216,9 @@ function getTurns() {
       const role = el.matches(USER_SEL) ? "user" : "ai";
       let text = el.innerText.trim();
       if (role === "user") {
+        // Gemini prepends "You said" to user messages; remove it so
+        // handoff messages are still recognised below
+        text = text.replace(/^You said\s*/i, "");
         // a handoff message: keep its content as plain context, don't re-wrap it
         if (text.startsWith(HANDOFF_MARK)) {
           text = text
@@ -254,7 +257,7 @@ function saveChatSnapshot() {
   if (sig === lastSig) return;
   lastSig = sig;
   console.log("snapshot saved", turns.map((t) => t.role).join(","));
-  callApi("/snapshot", { site: location.hostname, turns: turns.slice(-10) });
+  callApi("/snapshot", { site: location.hostname, turns: turns.slice(-30) });
 }
 setInterval(saveChatSnapshot, 5000);
 
@@ -272,22 +275,25 @@ async function checkHandoff() {
     if (!snapshot || snapshot.used) return;
     if (snapshot.site === location.hostname) return;
     if (Date.now() - snapshot.ts > 6 * 3600 * 1000) return;
+
+    // set early so the 1.5s interval doesn't fire twice
     handoffUrl = location.href;
-    const body = snapshot.turns
-      .map((t) =>
-        t.role === "user"
-          ? "Me: " + t.text
-          : t.role === "ai"
-          ? "AI: " + t.text
-          : t.text
-      )
-      .join("\n");
-    injectText(
-      `${HANDOFF_MARK} ${snapshot.site}. Recent context:\n${body}\n\nContinue from here.`
-    );
     // one-shot: refreshing or opening another new chat won't re-inject it
     await chrome.storage.local.set({ snapshot: { ...snapshot, used: true } });
-    toast("Chat carried over. Press Enter to send");
+
+    toast("Summarizing your last chat…");
+    const res = await callApi("/summarize", { turns: snapshot.turns });
+    const summary = res && res.ok && res.data && res.data.summary;
+    if (!summary) return toast("Couldn't summarize the chat");
+
+    // user may have started typing while we waited
+    const el2 = getEditor();
+    if (!el2 || (el2.value ?? el2.innerText).trim()) return;
+
+    injectText(
+      `${HANDOFF_MARK} ${snapshot.site}. Summary:\n${summary}\n\nContinue from here.`
+    );
+    toast("Summary added. Press Enter to send");
   } catch (e) {}
 }
 setInterval(checkHandoff, 1500);

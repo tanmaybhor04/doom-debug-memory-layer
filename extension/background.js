@@ -1,4 +1,5 @@
 const API = "http://localhost:8000";
+const GEMINI_MODEL = "gemini-2.5-flash"; // change here if Google renames the model
 
 // ---------- REDACTION ----------
 const PATTERNS = [
@@ -69,15 +70,124 @@ async function localContext(body) {
 // ---------- CHAT SNAPSHOT ----------
 async function saveSnapshot(body) {
   let redactions = 0;
-  const turns = (body.turns || []).slice(-10).map((t) => { // FIX: was -4
+  const turns = (body.turns || []).slice(-30).map((t) => {
     const r = redact(t.text);
     redactions += r.count;
-    return { role: t.role, text: r.text.slice(0, 2000) }; // FIX: was 300
+    return { role: t.role, text: r.text.slice(0, 3000) };
   });
+  // signature of this chat; if it matches what's already stored, keep the
+  // old snapshot (and its "used" flag) so the same chat isn't handed off twice
+  const last = turns[turns.length - 1];
+  const sig =
+    body.site + ":" + turns.length + ":" + (last ? last.text.slice(-80) : "");
+  const { snapshot: old } = await chrome.storage.local.get("snapshot");
+  if (old && old.sig === sig) return { saved: 0, redactions };
+
   await chrome.storage.local.set({
-    snapshot: { site: body.site, ts: Date.now(), turns },
+    snapshot: { site: body.site, ts: Date.now(), turns, sig },
   });
   return { saved: turns.length, redactions };
+}
+
+// ---------- SUMMARY ----------
+const STOP = new Set(
+  "the and for that with this you your are was have has not but can will from they their what when which how about would could should there been into also just like than then them these those some any more very".split(
+    " "
+  )
+);
+
+function splitSentences(t) {
+  return t
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25 && s.length < 400);
+}
+
+// Fallback used when Gemini fails (no key, no internet, bad response).
+// Extractive: picks the most important existing sentences.
+function localSummary(turns) {
+  const prior = turns.filter((t) => t.role === "ctx").map((t) => t.text).join(" ");
+  const users = turns.filter((t) => t.role === "user");
+  const ais = turns.filter((t) => t.role === "ai");
+
+  const freq = {};
+  for (const t of turns)
+    for (const w of tokens(t.text))
+      if (!STOP.has(w)) freq[w] = (freq[w] || 0) + 1;
+
+  const scored = ais
+    .flatMap((t) => splitSentences(t.text))
+    .map((s, i) => {
+      const w = tokens(s).filter((x) => !STOP.has(x));
+      const score =
+        w.reduce((a, x) => a + (freq[x] || 0), 0) / Math.sqrt(w.length || 1);
+      return { s, i, score };
+    });
+  const keyPoints = scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .sort((a, b) => a.i - b.i)
+    .map((x) => x.s.slice(0, 220));
+
+  const lines = [];
+  if (prior) lines.push("Earlier context: " + prior.slice(0, 300));
+  if (users[0]) lines.push("Topic / goal: " + users[0].text.slice(0, 250));
+  if (users.length > 2) {
+    const asked = users
+      .slice(1, -1)
+      .slice(-3)
+      .map((u) => "- " + u.text.slice(0, 120));
+    lines.push("Other things I asked:\n" + asked.join("\n"));
+  }
+  if (keyPoints.length)
+    lines.push(
+      "Key points from the AI:\n" + keyPoints.map((k) => "- " + k).join("\n")
+    );
+  if (users.length > 1)
+    lines.push("My latest question: " + users[users.length - 1].text.slice(0, 250));
+  return lines.join("\n\n");
+}
+
+async function geminiSummary(turns) {
+  const { geminiKey } = await chrome.storage.local.get("geminiKey");
+  if (!geminiKey) throw new Error("no key");
+
+  const convo = turns
+    .map((t) => (t.role === "ctx" ? "earlier context" : t.role) + ": " + t.text)
+    .join("\n");
+  const prompt =
+    "Summarize this chat so another AI can continue it. Include: the user's goal, " +
+    "key facts and decisions, what has been answered, and what is still open. " +
+    "Write it from the user's point of view where natural. " +
+    "Cover the whole conversation, not just the end. " +
+    "Under 250 words, plain text, no preamble.\n\n" +
+    convo;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" +
+        GEMINI_MODEL +
+        ":generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiKey,
+        },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        signal: ctrl.signal,
+      }
+    );
+    if (!r.ok) throw new Error("gemini status " + r.status);
+    const d = await r.json();
+    const summary = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!summary) throw new Error("empty");
+    return summary;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---------- MESSAGE ROUTER ----------
@@ -85,6 +195,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     if (msg.path === "/snapshot") {
       sendResponse({ ok: true, data: await saveSnapshot(msg.body), via: "local" });
+      return;
+    }
+
+    if (msg.path === "/summarize") {
+      // redact BEFORE anything leaves the browser
+      // "ctx" turns are older handoffs pasted into this chat; leave them out
+      // so the summary only covers the chat you actually just had
+      const turns = (msg.body.turns || [])
+        .filter((t) => t.role !== "ctx")
+        .map((t) => ({
+          role: t.role,
+          text: redact(t.text).text,
+        }));
+      try {
+        const summary = await geminiSummary(turns);
+        sendResponse({ ok: true, data: { summary }, via: "gemini" });
+      } catch (e) {
+        console.warn("Gemini summary failed, using local:", e);
+        sendResponse({
+          ok: true,
+          data: { summary: localSummary(turns) },
+          via: "local",
+        });
+      }
       return;
     }
 
