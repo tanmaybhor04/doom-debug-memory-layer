@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+<<<<<<< HEAD
   "name": "DOOM // Memory Layer",
   "version": "1.0.0",
   "description": "Universal local-first context & PII memory layer for AI agents.",
@@ -36,4 +37,25 @@
       "run_at": "document_idle"
     }
   ]
+=======
+  "name": "Memory Layer",
+  "version": "0.2",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "http://localhost:8000/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Memory Layer" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": [
+      "https://chatgpt.com/*",
+      "https://claude.ai/*",
+      "https://gemini.google.com/*"
+    ],
+    "js": ["content.js"]
+  }]
+>>>>>>> b576c46d360403f52c74f075a237971b7b1bac00
 }
