@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DOOM Memory Layer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      min-height: 360px;
+      background: #030711;
+      color: #e2e8f0;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    /* ── header ── */
+    header {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      border-bottom: 1px solid #22d3ee22;
+      padding: 14px 16px 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #22d3ee;
+      box-shadow: 0 0 10px #22d3ee;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .brand {
+      font-weight: 900; font-size: 13px; letter-spacing: 2px;
+      background: linear-gradient(90deg, #22d3ee, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    /* ── status row ── */
+    #status-row {
+      display: flex; gap: 8px; padding: 10px 14px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .chip {
+      flex: 1; text-align: center; padding: 5px 8px;
+      border-radius: 999px; border: 1px solid #334155;
+      background: #0f172a; color: #94a3b8;
+      font-size: 10px; letter-spacing: 1px;
+    }
+    .chip.online  { border-color: #164e63; color: #22d3ee; background: #0c4a6e22; }
+    .chip.offline { border-color: #78350f; color: #f59e0b; background: #78350f22; }
+
+    /* ── body ── */
+    main { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* memory list */
+    #mem-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+    .mem-item {
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .mem-key { color: #22d3ee; font-weight: bold; font-size: 11px; }
+    .mem-val { color: #64748b; font-size: 10px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* inject button */
+    #inject-btn {
+      width: 100%; padding: 10px;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: #fff; font-weight: 900; font-size: 12px;
+      letter-spacing: 1.5px; border: none; border-radius: 10px;
+      cursor: pointer; transition: opacity .15s;
+      box-shadow: 0 0 20px rgba(14,165,233,.35);
+    }
+    #inject-btn:hover { opacity: .9; }
+    #inject-btn:active { transform: scale(.98); }
+
+    /* footer link */
+    #footer { text-align: center; padding: 10px; border-top: 1px solid #1e293b; }
+    #footer a { color: #334155; font-size: 10px; text-decoration: none; }
+    #footer a:hover { color: #22d3ee; }
+
+    /* empty state */
+    .empty { color: #334155; text-align: center; padding: 20px 0; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="dot"></div>
+    <div class="brand">DOOM // MEMORY LAYER</div>
+  </header>
+
+  <div id="status-row">
+    <div class="chip" id="chip-status">⟳ Connecting…</div>
+    <div class="chip" id="chip-nodes">— nodes</div>
+  </div>
+
+  <main>
+    <div id="mem-list"><div class="empty">Loading rules…</div></div>
+
+    <button id="inject-btn">⬡ FORCE INJECT NOW</button>
+  </main>
+
+  <div id="footer">
+    <a href="http://localhost:5173" target="_blank">Open Dashboard ↗</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
